@@ -1,2 +1,3 @@
-# hsic-lasso-psi
-Post-selection inference based on truncated Gaussians for the HSIC-Lasso feature selection procedure
+# Post-selection inference for HSIC-Lasso
+
+This repository contains simulations used in the second subproject of my master thesis *Model uncertainty in statistical inference*.
