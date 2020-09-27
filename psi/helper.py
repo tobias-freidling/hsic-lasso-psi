@@ -230,7 +230,7 @@ def estimate_M(X, estimator, B, ratio):
 
 
 
-def lasso_sol_helper(M, H, lam, w = None):
+def lasso_sol(M, H, lam, w = None):
     """Optimisation of HSIC-Lasso function for given regularisation"""
     if w is None:
         w = np.ones(H.shape[0])
