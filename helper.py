@@ -1,18 +1,20 @@
-from mskernel import hsic, util, kernel
 import numpy as np
-from sklearn.covariance import ledoit_wolf, oas
+from mskernel import hsic, util, kernel
 from joblib import Parallel, delayed 
+from sklearn.linear_model import Lasso
+from sklearn.covariance import ledoit_wolf, oas
 import covar
 
 
+
 class KDiscrete(kernel.Kernel):
+    """Discrete, or rather delta, kernel which was not implemented in mskernel"""
     
     def eval(self, X1, X2):
         """
-        X1 : n1 x d   nd-array
-        X2 : n2 x d   nd-array
-        
-        return: n1 x n2 Gram matrix
+        :param X1: (nd-array) n1 x d
+        :param X2: (nd-array) n2 x d
+        :returns: (nd-array) n1 x n2 Gram matrix
         """
         (n1, d1) = X1.shape
         (n2, d2) = X2.shape
@@ -33,6 +35,7 @@ class KDiscrete(kernel.Kernel):
         return "Discrete Kernel"
 
 
+"""Code implemented by Ahmed Fasih (fasiha)"""
 def nearestPD(A):
     """Find the nearest positive-definite matrix to input
     A Python/Numpy port of John D'Errico's `nearestSPD` MATLAB code [1], which
@@ -41,36 +44,20 @@ def nearestPD(A):
     [2] N.J. Higham, "Computing a nearest symmetric positive semidefinite
     matrix" (1988): https://doi.org/10.1016/0024-3795(88)90223-6
     """
-
     B = (A + A.T) / 2
     _, s, V = np.linalg.svd(B)
-
     H = np.dot(V.T, np.dot(np.diag(s), V))
-
     A2 = (B + H) / 2
-
     A3 = (A2 + A2.T) / 2
-
     if isPD(A3):
         return A3
-
     spacing = np.spacing(np.linalg.norm(A))
-    # The above is different from [1]. It appears that MATLAB's `chol` Cholesky
-    # decomposition will accept matrixes with exactly 0-eigenvalue, whereas
-    # Numpy's will not. So where [1] uses `eps(mineig)` (where `eps` is Matlab
-    # for `np.spacing`), we use the above definition. CAVEAT: our `spacing`
-    # will be much larger than [1]'s `eps(mineig)`, since `mineig` is usually on
-    # the order of 1e-16, and `eps(1e-16)` is on the order of 1e-34, whereas
-    # `spacing` will, for Gaussian random matrixes of small dimension, be on
-    # othe order of 1e-16. In practice, both ways converge, as the unit test
-    # below suggests.
     I = np.eye(A.shape[0])
     k = 1
     while not isPD(A3):
         mineig = np.min(np.real(np.linalg.eigvals(A3)))
         A3 += I * (-mineig * k**2 + spacing)
         k += 1
-
     return A3
 
 def isPD(B):
@@ -81,13 +68,12 @@ def isPD(B):
     except np.linalg.LinAlgError:
         return False
 
-# From Taylor
+
 def find_root(f, y, lb, ub, tol=1e-6):
     """
     searches for solution to f(x) = y in (lb, ub), where 
     f is a monotone decreasing function
     """       
-    
     # make sure solution is in range
     a, b   = lb, ub
     fa, fb = f(a), f(b)
@@ -103,7 +89,7 @@ def find_root(f, y, lb, ub, tol=1e-6):
     # determine the necessary number of iterations
     max_iter = int( np.ceil( ( np.log(tol) - np.log(b-a) ) / np.log(0.5) ) )
 
-    # bisect (slow but sure) until solution is obtained
+    # bisect until solution is obtained
     for _ in range(max_iter):
         c, fc  = (a+b)/2, f((a+b)/2)
         if fc > y: a = c
@@ -111,27 +97,31 @@ def find_root(f, y, lb, ub, tol=1e-6):
     
     return c
 
+
 def estimate_H_unbiased(X, Y, discrete_output = False):
+    """Estimating H with unbiased HSIC-estimator"""
     assert Y.shape[0] == X.shape[0]
-    n = X.shape[0]
-    p = X.shape[1]  
-    x_bw = util.meddistance(X, subsample = 1000)**2
+    p = X.shape[1]
+    # Creating X- and Y-kernels
+    x_bw = util.meddistance(X, subsample = 1000)**2 # bandwith of Gaussian kernel
     kx = kernel.KGauss(x_bw)
     if discrete_output:
         ky = KDiscrete()
     else:
         y_bw = util.meddistance(Y[:, np.newaxis], subsample = 1000)**2
         ky = kernel.KGauss(y_bw)
-    
+    # H estimation
     hsic_H = hsic.HSIC_U(kx, ky)
     H = np.zeros(p)
     for i in range(p):
         H[i] = hsic_H.compute(X[:,i,np.newaxis], Y[:,np.newaxis])
     return H
 
+
+
 def estimate_H_unbiased_parallel(X, Y, discrete_output = False):
+    """Parallelised estimation of H with unbiased HSIC-estimator"""
     assert Y.shape[0] == X.shape[0]
-    n = X.shape[0]
     p = X.shape[1]  
     x_bw = util.meddistance(X, subsample = 1000)**2
     kx = kernel.KGauss(x_bw)
@@ -144,12 +134,17 @@ def estimate_H_unbiased_parallel(X, Y, discrete_output = False):
     hsic_H = hsic.HSIC_U(kx, ky)    
     def one_calc(i):
         return hsic_H.compute(X[:,i,np.newaxis], Y[:,np.newaxis])
-    
     par = Parallel(n_jobs = -1)
     res = par(delayed(one_calc)(i) for i in range(p))
     return np.array(res)
 
+
+
 def estimate_H(X, Y, estimator, B, ratio, discrete_output = False):
+    """Estimating H with Block or incomplete U-statistics estimator
+    :param B: Block size
+    :param ratio: size of incomplete U-statistics estimator
+    """
     assert Y.shape[0] == X.shape[0]
     n = X.shape[0]
     p = X.shape[1]  
@@ -177,7 +172,7 @@ def estimate_H(X, Y, estimator, B, ratio, discrete_output = False):
 
 
 def estimate_M_unbiased(X):
-    n = X.shape[0]
+    """Estimating M with unbiased HSIC-estimator"""
     p = X.shape[1]
     x_bw = util.meddistance(X, subsample = 1000)**2
     kx = kernel.KGauss(x_bw)
@@ -186,12 +181,12 @@ def estimate_M_unbiased(X):
     for i in range(p):
         for j in range(i+1):
             M_true[i, j] = hsic_M.compute(X[:,i,np.newaxis], X[:, j, np.newaxis])
-            M_true[j, i] = M_true[i, j]
-    M = nearestPD(M_true)
+            M_true[j, i] = M_true[i, j] # due to symmetry
+    M = nearestPD(M_true) # positive definite approximation
     return M_true, M
 
 def estimate_M_unbiased_parallel(X):
-    n = X.shape[0]
+    """Parallelised estimation of M with unbiased HSIC-estimator"""
     p = X.shape[1]
     x_bw = util.meddistance(X, subsample = 1000)**2
     kx = kernel.KGauss(x_bw)
@@ -208,12 +203,15 @@ def estimate_M_unbiased_parallel(X):
         for j in range(i+1):
             M_true[i, j] = M_true[j, i] = res[sp + j]
         sp += i+1
-    M = nearestPD(M_true)
+    M = nearestPD(M_true) # positive definite approximation
     return M_true, M
     
 
 def estimate_M(X, estimator, B, ratio):
-    n = X.shape[0]
+    """Estimating M with Block or incomplete U-statistics estimator
+    :param B: Block size
+    :param ratio: size of incomplete U-statistics estimator
+    """
     p = X.shape[1]
     x_bw = util.meddistance(X, subsample = 1000)**2
     kx = kernel.KGauss(x_bw)
@@ -227,25 +225,31 @@ def estimate_M(X, estimator, B, ratio):
         for j in range(i+1):
             M_true[i, j] = np.mean(hsic_M.estimates(X[:, i, np.newaxis], X[:, j, np.newaxis]))
             M_true[j, i] = M_true[i, j]
-    M = nearestPD(M_true)
+    M = nearestPD(M_true) # positive definite approximation
     return M_true, M
 
+
+
 def lasso_sol_helper(M, H, lam, w = None):
-    # Decomposition: M = L*L^T; H = L * Y
+    """Optimisation of HSIC-Lasso function for given regularisation"""
     if w is None:
         w = np.ones(H.shape[0])
+    # Decomposition: M = L*L^T; H = L * Y
     L = np.linalg.cholesky(M)
-    #L = np.linalg.cholesky(self.M).real #lower triangular matrix
     Y = np.linalg.solve(L, H)
+    # Optimisation
     reg = Lasso(alpha = lam / H.shape[0], fit_intercept = False, positive = True)
     reg.fit(L.T / w, Y)
-    #lam = reg.alpha_
     beta = reg.coef_
+    # Arrays of selected and non-selected covariates
     ind_sel = np.where(beta > 1e-10)[0]
     ind_nsel = np.where(beta <= 1e-10)[0]
     return beta, ind_sel, ind_nsel
 
+
+
 def covariance(H_estimates, m, cov_mode):
+    """Covariance estimation for H-vector with different methods"""
     if cov_mode == 'ledoit_wolf':
         cov, _ = ledoit_wolf(H_estimates.T)
     elif cov_mode == 'empirical':
