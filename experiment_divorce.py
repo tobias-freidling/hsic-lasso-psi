@@ -14,20 +14,23 @@ Y_divorce = Y_divorce.astype(float)
 X_divorce = df_divorce.iloc[:,:-1].values
 X_divorce = X_divorce.astype(float)
 
+# Preparation for binary data-kernel
+n = Y_divorce.shape[0]
+freq_dict = {0 : n, 1:n}
 
 # Models
 targets = ['partial', 'full', 'carved', 'H']
 alpha = 0.05
 split_inc_divorce = Split_HSIC_Lasso(targets, split_ratio = 0.2, n_screen = 54, adaptive_lasso = False,
                                      cv = True, cov_mode = 'oas', M_estimator = 'unbiased', H_estimator = 'inc',
-                                     H_l = 15, discrete_output = True)
+                                     H_l = 15, discrete_output = (freq_dict, freq_dict))
 split_block_divorce = Split_HSIC_Lasso(targets, split_ratio = 0.2, n_screen = 54, adaptive_lasso = False,
                                        cv = True, cov_mode = 'oas', M_estimator = 'unbiased', H_estimator = 'block',
-                                       H_B = 5, discrete_output = True)
+                                       H_B = 5, discrete_output = (freq_dict, freq_dict))
 multi_inc_divorce = Poly_Multi_HSIC(n_select = 15, poly = False, estimator = 'inc',
-                                    l = 15, discrete_output = True)
+                                    l = 15, discrete_output = (freq_dict, freq_dict))
 multi_block_divorce = Poly_Multi_HSIC(n_select = 15, poly = False, estimator = 'block',
-                                    B = 5, discrete_output = True)
+                                    B = 5, discrete_output = (freq_dict, freq_dict))
 
 # Inference
 H0 = np.ones(54)

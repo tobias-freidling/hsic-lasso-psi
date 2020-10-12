@@ -1,6 +1,5 @@
 from psi.simulation import Data_Generator, Evaluator, Visualisation
 from psi.hsic_lasso_psi import Split_HSIC_Lasso
-
 """
 Comparison of different methods for hyperparameter choice
 """

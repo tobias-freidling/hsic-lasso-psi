@@ -5,16 +5,20 @@ from sklearn.linear_model import Lasso
 from sklearn.covariance import ledoit_wolf, oas
 import covar
 
-
-
+    
 class KDiscrete(kernel.Kernel):
-    """Discrete, or rather delta, kernel which was not implemented in mskernel"""
+    
+    def __init__(self, freq_dict1, freq_dict2):
+        # dictionary of frequencies indexed by value
+        self.freq_dict1 = freq_dict1
+        self.freq_dict2 = freq_dict2
     
     def eval(self, X1, X2):
         """
-        :param X1: (nd-array) n1 x d
-        :param X2: (nd-array) n2 x d
-        :returns: (nd-array) n1 x n2 Gram matrix
+        X1 : n1 x d   nd-array
+        X2 : n2 x d   nd-array
+        
+        return: n1 x n2 Gram matrix
         """
         (n1, d1) = X1.shape
         (n2, d2) = X2.shape
@@ -23,8 +27,8 @@ class KDiscrete(kernel.Kernel):
         for i in range(n1):
             for j in range(n2):
                 if X1[i,:] == X2[j,:]:
-                    K[i, j] = 1
-        K = K / np.sqrt(n1 * n2)
+                    val = X1[i,0]
+                    K[i, j] = 1 / np.sqrt(self.freq_dict1[val] * self.freq_dict2[val])
         return K
     
     def pair_eval(self, X, Y):
@@ -98,15 +102,16 @@ def find_root(f, y, lb, ub, tol=1e-6):
     return c
 
 
-def estimate_H_unbiased(X, Y, discrete_output = False):
+def estimate_H_unbiased(X, Y, discrete_output = None):
     """Estimating H with unbiased HSIC-estimator"""
     assert Y.shape[0] == X.shape[0]
     p = X.shape[1]
     # Creating X- and Y-kernels
     x_bw = util.meddistance(X, subsample = 1000)**2 # bandwith of Gaussian kernel
     kx = kernel.KGauss(x_bw)
-    if discrete_output:
-        ky = KDiscrete()
+    if discrete_output is not None:
+        freq_dict1, freq_dict2 = discrete_output
+        ky = KDiscrete(freq_dict1, freq_dict2)
     else:
         y_bw = util.meddistance(Y[:, np.newaxis], subsample = 1000)**2
         ky = kernel.KGauss(y_bw)
@@ -119,14 +124,15 @@ def estimate_H_unbiased(X, Y, discrete_output = False):
 
 
 
-def estimate_H_unbiased_parallel(X, Y, discrete_output = False):
+def estimate_H_unbiased_parallel(X, Y, discrete_output = None):
     """Parallelised estimation of H with unbiased HSIC-estimator"""
     assert Y.shape[0] == X.shape[0]
     p = X.shape[1]  
     x_bw = util.meddistance(X, subsample = 1000)**2
     kx = kernel.KGauss(x_bw)
-    if discrete_output:
-        ky = KDiscrete()
+    if discrete_output is not None:
+        freq_dict1, freq_dict2 = discrete_output
+        ky = KDiscrete(freq_dict1, freq_dict2)
     else:
         y_bw = util.meddistance(Y[:, np.newaxis], subsample = 1000)**2
         ky = kernel.KGauss(y_bw)
@@ -140,7 +146,7 @@ def estimate_H_unbiased_parallel(X, Y, discrete_output = False):
 
 
 
-def estimate_H(X, Y, estimator, B, ratio, discrete_output = False):
+def estimate_H(X, Y, estimator, B, ratio, discrete_output = None):
     """Estimating H with Block or incomplete U-statistics estimator
     :param B: Block size
     :param ratio: size of incomplete U-statistics estimator
@@ -150,8 +156,9 @@ def estimate_H(X, Y, estimator, B, ratio, discrete_output = False):
     p = X.shape[1]  
     x_bw = util.meddistance(X, subsample = 1000)**2
     kx = kernel.KGauss(x_bw)
-    if discrete_output:
-        ky = KDiscrete()
+    if discrete_output is not None:
+        freq_dict1, freq_dict2 = discrete_output
+        ky = KDiscrete(freq_dict1, freq_dict2)
     else:
         y_bw = util.meddistance(Y[:, np.newaxis], subsample = 1000)**2
         ky = kernel.KGauss(y_bw)

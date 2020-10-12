@@ -10,7 +10,7 @@ from sklearn.linear_model import LassoCV, LassoLarsIC
 class Screening:
     """Screening procedure on first fold"""
     
-    def __init__(self, X, Y, estimator, B, ratio, discrete_output, n_screen):
+    def __init__(self, X, Y, estimator, B, ratio, discrete_output, n_screen, unbiased_parallel):
         self.X = X # covariate data
         self.p = self.X.shape[1]
         self.Y = Y # response data
@@ -19,6 +19,7 @@ class Screening:
         self.ratio = ratio # size of inc. U-stats estimator
         self.discrete_output = discrete_output # apply delta kernel to response
         self.n_screen = n_screen # number of screened variables
+        self.unbiased_parallel = unbiased_parallel # parallelised computation of unbiased estimates
         self.ind_sc = None # indices of screened variables
         self.ind_nsc = None # indices of non-screened variables
         self.Hs = None # H with screened features
@@ -34,7 +35,9 @@ class Screening:
         :param criterion: if cross validation not used, information criterion to be applied
         """
         # Screening
-        if self.estimator == 'unbiased':
+        if self.estimator == 'unbiased' and self.unbiased_parallel:
+            H = helper.estimate_H_unbiased_parallel(self.X, self.Y, self.discrete_output)
+        elif self.estimator == 'unbiased' and not self.unbiased_parallel:
             H = helper.estimate_H_unbiased(self.X, self.Y, self.discrete_output)
         else:
             _, H, _ = helper.estimate_H(self.X, self.Y, self.estimator, self.B, self.ratio, self.discrete_output)
@@ -43,7 +46,10 @@ class Screening:
         self.Hs = H[self.ind_sc]
         
         # Calculation of M
-        _, self.M = helper.estimate_M(self.X[:,self.ind_sc], self.estimator, self.B, self.ratio)
+        if self.unbiased_parallel:
+            _, self.M = helper.estimate_M_unbiased_parallel(self.X[:, self.ind_sc])
+        else:
+            _, self.M = helper.estimate_M(self.X[:,self.ind_sc], self.estimator, self.B, self.ratio)
         
         # Weights
         if adaptive_lasso:
@@ -370,7 +376,8 @@ class Split_HSIC_Lasso:
                  gamma = 1.5, criterion = 'aic', cov_mode = 'oas',
                  screen_estimator = 'unbiased', screen_B = 10, screen_l = 1,
                  M_estimator = 'block', M_B = 10, M_l = 1,
-                 H_estimator = 'block', H_B = 10, H_l = 1, discrete_output = False):
+                 H_estimator = 'block', H_B = 10, H_l = 1, discrete_output = None,
+                 unbiased_parallel = False):
         self.targets = targets # list of inference targets
         self.split_ratio = split_ratio # ratio of data used for first fold
         self.n_screen = n_screen # number of screened variables
@@ -389,6 +396,7 @@ class Split_HSIC_Lasso:
         self.H_B = H_B
         self.H_l = H_l
         self.discrete_output = discrete_output # use of delta kernel for output
+        self.unbiased_parallel = unbiased_parallel # parallelised computation of unbiased estimates
 
 
     def sel_inf(self, X, Y, inf_type, alpha, niv, H0, M0, i = None):
@@ -411,7 +419,7 @@ class Split_HSIC_Lasso:
         
         # Get parameters from screening on first fold
         screen = Screening(X[ind1, :], Y[ind1], self.screen_estimator, self.screen_B,
-                           self.screen_l, self.discrete_output, self.n_screen)
+                           self.screen_l, self.discrete_output, self.n_screen, self.unbiased_parallel)
         screen.calc_param(self.gamma, self.adaptive_lasso, self.cv, self.criterion)
         ind_sc = screen.ind_sc
         w = screen.w
@@ -420,7 +428,9 @@ class Split_HSIC_Lasso:
         # Calculate H, M, covariance matrix and betas
         H_estimates, H, m = helper.estimate_H(X[ind2,:][:, ind_sc], Y[ind2], self.H_estimator,
                                        self.H_B, self.H_l, self.discrete_output)
-        if self.M_estimator == 'unbiased':
+        if self.M_estimator == 'unbiased' and self.unbiased_parallel:
+            _, M = helper.estimate_M_unbiased_parallel(X[ind2,:][:, ind_sc])
+        elif self.M_estimator =='unbiased' and not self.unbiased_parallel:
             _, M = helper.estimate_M_unbiased(X[ind2,:][:, ind_sc])
         else:
             _, M = helper.estimate_M(X[ind2,:][:, ind_sc], self.M_estimator, self.M_B, self.M_l)
